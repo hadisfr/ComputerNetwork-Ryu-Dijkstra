@@ -14,7 +14,7 @@ from ryu.ofproto import inet
 from ryu.lib.packet import icmp
 from ryu.ofproto import ether
 from ryu.topology import event, switches
-from ryu.topology.api import get_switch, get_link
+from ryu.topology.api import get_all_switch, get_all_link
 from ryu.app.wsgi import ControllerBase
 import array
 from ryu.app.ofctl.api import get_datapath
@@ -87,6 +87,7 @@ class dijkstra_switch(app_manager.RyuApp):
     def __init__(self, *args, **kwargs):
         super(dijkstra_switch, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
+        self.dpid_to_port = {}
         # self.net = nx.DiGraph()
         # self.g = nx.DiGraph()
 
@@ -98,15 +99,20 @@ class dijkstra_switch(app_manager.RyuApp):
         match = parser.OFPMatch()
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
                                           ofproto.OFPCML_NO_BUFFER)]
-        self.add_flow(datapath, 0, match, actions)
+        self.add_flow(datapath, 2, match, actions)
     
     def add_flow(self, datapath, priority, match,inst=[]):
         ofp_parser = datapath.ofproto_parser
         mod = ofp_parser.OFPFlowMod(datapath=datapath, priority=priority, match=match, instructions=inst)
         datapath.send_msg(mod)
 
+
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def packet_in_handler(self, ev):
+        
+        if not self.dpid_to_port:
+            links = get_all_link(self)
+
         msg = ev.msg
         datapath = msg.datapath
         ofproto = datapath.ofproto
@@ -122,18 +128,29 @@ class dijkstra_switch(app_manager.RyuApp):
 
         self.mac_to_port[dpid][src] = in_port
 
-        if dst in self.mac_to_port[dpid]:
-            out_port = self.mac_to_port[dpid][dst]
+        dst_dpid = dpid_hostLookup(dst)
+        path = dijkstra(dpid, dst_dpid) 
+
+        if len(path) == 1:
+            if dst in self.mac_to_port[dpid]:
+                out_port = self.mac_to_port[dpid][dst]
+            else:
+                out_port = ofproto.OFPP_FLOOD
         else:
-            out_port = ofproto.OFPP_FLOOD
+            next_dpid = path[1]
+            out_port = self.getDpidPort(dpid, next_dpid)
+
         actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
 
         if out_port != ofproto.OFPP_FLOOD:
             self.add_flow(datapath, in_port, dst, actions)
 
-        dst_dpid = dpid_hostLookup(dst)
-        path = dijkstra(dpid, dst_dpid) 
+    def getDpidPort(self, src_dpid, dst_dpid):
+        links = get_all_link(self)
+        for link in links:
+            if link.src.dpid == src_dpid and link.dst.dpid == dst_dpid:
+                return link.src.port_no
+        raise TypeError('link between %s and %s does not exist', src_dpid, dst_dpid)
 
-        next_dpid = path[1] 
 
         
