@@ -22,14 +22,6 @@ class ExampleSwitch13(app_manager.RyuApp):
         self.dpid_to_port = {}
         self.topology_api_app = self        
 
-    @set_ev_cls(event.EventSwitchEnter)
-    def get_topology_data(self, ev):
-        switch_list = get_switch(self.topology_api_app, None)
-        switches=[switch.dp.id for switch in switch_list]
-        links_list = get_link(self.topology_api_app, None)
-        links=[(link.src.dpid,link.dst.dpid,{'port':link.src.port_no}) for link in links_list]
-        print(links)
-
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
         datapath = ev.msg.datapath
@@ -87,18 +79,11 @@ class ExampleSwitch13(app_manager.RyuApp):
             if hasattr(p,'protocol_name') and p.protocol_name == 'tcp':
                 shouldLog = True
 
-        # if shouldLog and not self.dpid_to_port:
-        #     links = get_all_link(self)
-        #     print(dpid)
-        #     for link in links:
-        #         l = link.to_dict()
-        #         print(l)
-        #     self.dpid_to_port = {'a':1}
-
-        if shouldLog:
-            self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
-            for p in pkt.protocols:
-                print(p.protocol_name)
+        # if shouldLog:
+        #     self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
+        #     for p in pkt.protocols:
+        #         if hasattr(p,'protocol_name'):
+        #             print(p.protocol_name)
 
         # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[dpid][src] = in_port
@@ -125,125 +110,21 @@ class ExampleSwitch13(app_manager.RyuApp):
                                   data=msg.data)
         datapath.send_msg(out)
 
+    @set_ev_cls(event.EventSwitchEnter)
+    def handler_switch_enter(self, ev):
+        # The Function get_switch(self, None) outputs the list of switches.
+        # self.topo_raw_switches = copy.copy(get_switch(self, None))
+        # The Function get_link(self, None) outputs the list of links.
+        self.topo_raw_links = copy.copy(get_link(self, None))
 
+        """
+        Now you have saved the links and switches of the topo. So you could do all sort of stuf with them. 
+        """
 
-
-class TopoStructure():
-    def __init__(self, *args, **kwargs):
-        self.topo_raw_switches = []
-        self.topo_raw_links = []
-        self.topo_links = []
-
-
-    def print_links(self, func_str=None):
-        # Convert the raw link to list so that it is printed easily
-        print("Current Links:")
+        print(" \t" + "Current Links:")
         for l in self.topo_raw_links:
-            print (l)
+            print (" \t\t" + str(l))
 
-    def print_switches(self, func_str=None):
-        print(" \t"+str(func_str)+": Current Switches:")
-        for s in self.topo_raw_switches:
-            print (" \t\t"+str(s))
-
-    def switches_count(self):
-        return len(self.topo_raw_switches)
-
-    def convert_raw_links_to_list(self):
-        # Build a  list with all the links [((srcNode,port), (dstNode, port))].
-        # The list is easier for printing.
-        self.lock.acquire()
-        self.topo_links = [((link.src.dpid, link.src.port_no),
-                            (link.dst.dpid, link.dst.port_no))
-                           for link in self.topo_raw_links]
-        self.lock.release()
-
-    def convert_raw_switch_to_list(self):
-        # Build a list with all the switches ([switches])
-        self.lock.acquire()
-        self.topo_switches = [(switch.dp.id, 1) for switch in self.topo_raw_switches]
-        self.lock.release()
-
-    """
-    Adds the link to list of raw links
-    """
-    def bring_up_link(self, link):
-        self.topo_raw_links.append(link)
-
-    """
-    Check if a link with specific nodes exists.
-    """
-    def check_link(self,sdpid, sport, ddpid, dport):
-        for i, link in self.topo_raw_links:
-            if ((sdpid, sport), (ddpid, dport)) == ((link.src.dpid, link.src.port_no), (link.dst.dpid, link.dst.port_no)):
-                return True
-        return False
-
-    """
-    Finds the shortest path from source s to destination d.
-    Both s and d are switches.
-    """
-    def find_shortest_path(self, s):
-        s_count = self.switches_count()
-        s_temp = s
-        visited = []
-        shortest_path = {}
-
-        while s_count != len(visited):
-            print(visited)
-            visited.append(s_temp)
-            print (visited)
-            print ("s_temp 1: " + str(s_temp))
-            for l in self.find_links_with_src(s_temp):
-                print ("\t"+str(l))
-                if l.dst.dpid not in visited:
-                    print ("\t\tDPID dst: "+ str(l.dst.dpid))
-                    if l.src.dpid in shortest_path:
-                        shortest_path[l.dst.dpid] += 1
-                        print("\t\t\tdpid found. Count: "+str(shortest_path[l.dst.dpid]))
-                    else:
-                        print("\t\t\tdpid not found.")
-                        shortest_path[l.dst.dpid] = 0
-            print ("shortest_path: "+str(shortest_path))
-            min_val = min(shortest_path.itervalues())
-            t = [k for k,v in shortest_path.iteritems() if v == min_val]
-            s_temp = t[0]
-            print  ("s_temp 2: " + str(s_temp)+"\n")
-        return shortest_path
-
-    """
-    Finds the dpids of destinations where the links' source is s_dpid
-    """
-    def find_dst_with_src(self, s_dpid):
-        d = []
-        for l in self.topo_raw_links:
-            if l.src.dpid == s_dpid:
-                d.append(l.dst.dpid)
-        return d
-
-    """
-    Finds the list of link objects where links' src dpid is s_dpid
-    """
-    def find_links_with_src(self, s_dpid):
-        d_links = []
-        for l in self.topo_raw_links:
-            if l.src.dpid == s_dpid:
-                d_links.append(l)
-        return d_links
-
-    """
-    Returns a link object that has in_dpid and in_port as either source or destination dpid and port.
-    """
-    def link_with_src_dst_port(self, in_port, in_dpid):
-        for l in self.topo_raw_links:
-            if (l.src.dpid == in_dpid and l.src.port_no == in_port) or (l.dst.dpid == in_dpid and l.src.port_no == in_port):
-                return l
-        return None
-    """
-    Returns a link object that has in_dpid and in_port as either source dpid and port.
-    """
-    def link_with_src_port(self, in_port, in_dpid):
-        for l in self.topo_raw_links:
-            if (l.src.dpid == in_dpid and l.src.port_no == in_port) or (l.dst.dpid == in_dpid and l.src.port_no == in_port):
-                return l
-        return None
+        # print(" \t" + "Current Switches:")
+        # for s in self.topo_raw_switches:
+        #     print (" \t\t" + str(s))

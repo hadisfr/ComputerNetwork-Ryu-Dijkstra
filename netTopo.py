@@ -1,3 +1,4 @@
+import time
 from mininet.net import Mininet
 from mininet.node import Controller, RemoteController, OVSController
 from mininet.node import CPULimitedHost, Host, Node
@@ -36,13 +37,13 @@ def myNetwork():
 
 
     info( '*** Add links\n')
-    net.addLink(h1, sw1)
-    net.addLink(sw1, sw2)
-    net.addLink(sw1,h3)
+    l1 = net.addLink(h1, sw1)
+    l2 = net.addLink(sw1, sw2)
+    l3 = net.addLink(sw1,h3)
 
-    net.addLink(sw2, sw3)
-    net.addLink(sw3, sw4)
-    net.addLink(sw4,h2)
+    l4 = net.addLink(sw2, sw3)
+    l5 = net.addLink(sw3, sw4)
+    l6 = net.addLink(sw4,h2)
 
     info( '*** Starting network\n')
     net.build()
@@ -60,6 +61,8 @@ def myNetwork():
     # run(['h1', 'hping3', '-c', '3', 'h2'])
 
     info( '*** Post configure switches and hosts\n')
+    time.sleep(1)
+    l1.delete()
     CLI(net)
     net.stop()
 
