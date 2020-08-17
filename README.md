@@ -1,18 +1,18 @@
-- ** How to check flow table: (mininet terminal)**
+-  How to check flow table: (mininet terminal)
 
- dpctl dump-flows -O OpenFlow13
+> dpctl dump-flows -O OpenFlow13
 
-- ** How to run Ryu controller:**
+-  How to run Ryu controller:
 
- ryu-manager --observe-links --ofp-tcp-listen-port 6635 [arbitrary port] ./controller.py
+> ryu-manager --observe-links --ofp-tcp-listen-port 6635 [arbitrary port] ./controller.py
 
-- ** How to run mininet program: **
+-  How to run mininet program:
 
 > - Cleaning before run:
-    sudo mn -c
+>>   sudo mn -c
 > - Running mininet:
-    sudo -E python networkTopology.py
+>>   sudo -E python networkTopology.py
 
-- ** How to run processor file: **
+- How to run processor file:
 
- python3 Processor.py
+> python3 Processor.py
