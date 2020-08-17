@@ -1,2 +1,2 @@
 
-// dpctl dump-flows -O OpenFlow13
+dpctl dump-flows -O OpenFlow13

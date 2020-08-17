@@ -117,7 +117,7 @@ for i in range(5):
     net = Mininet(topo, controller=lambda name: RemoteController(name,
                 ip= '127.0.0.1', protocol= 'tcp', port= 6635), autoSetMacs= True)
     net.start()
-    # time.sleep(7)
+    time.sleep(7)
     run()
     # CLI(net)
     net.stop()
