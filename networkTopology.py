@@ -4,6 +4,7 @@ import random
 import sys
 import threading
 import time
+
 from datetime import datetime
 from mininet.topo import Topo
 from mininet.net import Mininet
@@ -96,7 +97,7 @@ def run():
     unit = 0.1
     info('start running')
     # print(datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3])
-    while timeCounter * unit < 20:
+    while timeCounter * unit < 60:
         time.sleep(unit)
         sendTcpPackets()
         timeCounter += 1
@@ -110,14 +111,14 @@ info( '*** Starting network\n')
 
             
 
-for i in range(1): 
+for i in range(5): 
     print('round ', i) 
     topo = MyTopo()
     net = Mininet(topo, controller=lambda name: RemoteController(name,
                 ip= '127.0.0.1', protocol= 'tcp', port= 6635), autoSetMacs= True)
     net.start()
-    time.sleep(5)
+    # time.sleep(7)
     run()
-    CLI(net)
+    # CLI(net)
     net.stop()
-
+    time.sleep(15)

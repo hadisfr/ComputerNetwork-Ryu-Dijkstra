@@ -107,7 +107,20 @@ class dijkstra_switch(app_manager.RyuApp):
         self.dpid_to_port = {}
         # self.net = nx.DiGraph()
         # self.g = nx.DiGraph()
-        self.flowRateFile = open('flowRate.txt', 'w')
+        self.flowRateFile = open('flowRate.tr', 'w')
+        self.packetTrace = open('packetTrace.tr', 'w')
+
+        self.topo_raw_links = [
+            {'src': {'dpid': 2, 'port_no': 2 }, 'dst':{'dpid': 3, 'port_no': 4}},
+            {'src': {'dpid': 3, 'port_no': 3 }, 'dst':{'dpid': 1, 'port_no': 2}},
+            {'src': {'dpid': 3, 'port_no': 5 }, 'dst':{'dpid': 4, 'port_no': 4}},
+            {'src': {'dpid': 3, 'port_no': 4 }, 'dst':{'dpid': 2, 'port_no': 2}},
+            {'src': {'dpid': 1, 'port_no': 2 }, 'dst':{'dpid': 3, 'port_no': 3}},
+            {'src': {'dpid': 4, 'port_no': 4 }, 'dst':{'dpid': 3, 'port_no': 5}}
+        ]
+
+    def log(self, msg, file):
+        file.write(str(datetime.utcnow().strftime('%H:%M:%S.%f')[:-3]) + '\t' + msg + '\n')
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -126,7 +139,7 @@ class dijkstra_switch(app_manager.RyuApp):
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
         mod = parser.OFPFlowMod(datapath=datapath, priority=priority, match=match, instructions=inst)
         datapath.send_msg(mod)
-        self.flowRateFile.write(str(datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]) + '\t' + str(datapath.id) + '\n')
+        self.log(str(datapath.id), self.flowRateFile)
 
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
@@ -178,7 +191,9 @@ class dijkstra_switch(app_manager.RyuApp):
                 isTcp = True
 
         if isTcp:
-            self.logger.info("in_port:%s, out_port: %s, path:%s", in_port, out_port, str(path))
+            pkt_ipv4 = pkt.get_protocol(ipv4.ipv4)
+            self.log( str(pkt_ipv4.identification) + ' ' + str(src) + ' ' + str(dst) + ' ' + str(path).replace(' ', '') , self.packetTrace)
+            # self.logger.info("in_port:%s, out_port: %s, path:%s", in_port, out_port, str(path))
             
 
         out = parser.OFPPacketOut(datapath=datapath,
@@ -189,6 +204,7 @@ class dijkstra_switch(app_manager.RyuApp):
 
     @set_ev_cls(event.EventSwitchEnter)
     def handler_switch_enter(self, ev):
+        self.logger.info('switch entered')
         # The Function get_switch(self, None) outputs the list of switches.
         self.topo_raw_switches = copy.copy(get_switch(self, None))
         # The Function get_link(self, None) outputs the list of links.
@@ -196,8 +212,8 @@ class dijkstra_switch(app_manager.RyuApp):
         
     def getDpidPort(self, src_dpid, dst_dpid):
         for link in self.topo_raw_links:
-            if (link.src.dpid == src_dpid and link.dst.dpid == dst_dpid):
-                return link.src.port_no
+            if (link['src']['dpid'] == src_dpid and link['dst']['dpid'] == dst_dpid):
+                return link['src']['port_no']
             # elif link.dst.dpid == src_dpid and link.src.dpid == dst_dpid:
             #     return link.dst.port_no
 

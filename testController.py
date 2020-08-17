@@ -4,7 +4,7 @@ from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import packet
-from ryu.lib.packet import ethernet
+from ryu.lib.packet import ethernet, ipv4, tcp
 from ryu.topology.api import get_all_switch, get_all_link
 from ryu.topology import event, switches
 from ryu.topology.api import get_switch, get_link
@@ -79,11 +79,12 @@ class ExampleSwitch13(app_manager.RyuApp):
             if hasattr(p,'protocol_name') and p.protocol_name == 'tcp':
                 shouldLog = True
 
-        # if shouldLog:
-        #     self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
-        #     for p in pkt.protocols:
-        #         if hasattr(p,'protocol_name'):
-        #             print(p.protocol_name)
+        if shouldLog:
+            pkt_ipv4 = pkt.get_protocol(ipv4.ipv4)
+            self.logger.info("packet in %s %s %s %s", dpid, src, dst, pkt_ipv4.identification)
+            # for p in pkt.protocols:
+            #     if hasattr(p,'protocol_name'):
+            #         print(p.protocol_name)
 
         # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[dpid][src] = in_port
@@ -121,9 +122,9 @@ class ExampleSwitch13(app_manager.RyuApp):
         Now you have saved the links and switches of the topo. So you could do all sort of stuf with them. 
         """
 
-        print(" \t" + "Current Links:")
-        for l in self.topo_raw_links:
-            print (" \t\t" + str(l))
+        # print(" \t" + "Current Links:")
+        # for l in self.topo_raw_links:
+        #     print (" \t\t" + str(l))
 
         # print(" \t" + "Current Switches:")
         # for s in self.topo_raw_switches:
