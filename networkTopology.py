@@ -116,7 +116,7 @@ for i in range(5):
     print('round ', i)
     topo = MyTopo()
     net = Mininet(topo, controller=lambda name: RemoteController(name,
-                  ip='127.0.0.1', protocol='tcp', port=6635), autoSetMacs=True)
+                  ip='127.0.0.1', protocol='tcp', port=6633), autoSetMacs=True)
     net.start()
     time.sleep(7)
     run()
