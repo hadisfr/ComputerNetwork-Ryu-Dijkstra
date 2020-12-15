@@ -5,7 +5,7 @@ dpctl dump-flows -O OpenFlow13
 
 How to run Ryu controller:
 ```bash
-ryu-manager --observe-links --ofp-tcp-listen-port 6635 [arbitrary port] ./controller.py
+ryu-manager --observe-links --ofp-tcp-listen-port 6633 [arbitrary port] ./controller.py
 ```
 
 How to run mininet program:
