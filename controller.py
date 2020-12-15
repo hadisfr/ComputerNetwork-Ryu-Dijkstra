@@ -21,6 +21,7 @@ import json
 import copy
 from datetime import datetime
 
+
 def getTopology():
     topo = {}
     f = open('topology.json')
@@ -35,7 +36,6 @@ def getTopology():
         topo[link['port2']][link['port1']] = link['weight']
     return topo
 
-    
 
 def find_min_distance(l, distances):
     if not l:
@@ -43,8 +43,9 @@ def find_min_distance(l, distances):
     minNode = l[0]
     for n in l:
         if distances[n] < distances[minNode]:
-            minNode = n 
+            minNode = n
     return minNode
+
 
 def dijkstra(src, dest):
     graph = getTopology()
@@ -53,14 +54,14 @@ def dijkstra(src, dest):
         raise TypeError('The source node cannot be found')
     if dest not in graph:
         return []
-    
+
     visited = {src}
     nodes = set(graph.keys())
     distances = {}
     predecessors = {}
 
     distances[src] = 0
-    predecessors[src] = src 
+    predecessors[src] = src
 
     for node in nodes:
         if node in graph[src]:
@@ -68,10 +69,10 @@ def dijkstra(src, dest):
             predecessors[node] = src
         else:
             distances[node] = float('inf')
-    
+
     while nodes != visited:
         nextNode = find_min_distance(list(nodes-visited), distances)
-        if nextNode == None:
+        if nextNode is None:
             break
         visited.add(nextNode)
         for node in graph.get(nextNode, []):
@@ -87,15 +88,16 @@ def dijkstra(src, dest):
     path.append(src)
     path.reverse()
     return path
-    
+
 
 def dpid_hostLookup(lmac):
     host_locate = {1: {'00:00:00:00:00:01'}, 2: {'00:00:00:00:00:02'}, 3: {'00:00:00:00:00:03', '00:00:00:00:00:04'},
-                    4: {'00:00:00:00:00:05', '00:00:00:00:00:06', '00:00:00:00:00:07'}}
+                   4: {'00:00:00:00:00:05', '00:00:00:00:00:06', '00:00:00:00:00:07'}}
     for dpid, mac in host_locate.items():
         if lmac in mac:
             return dpid
     return -1
+
 
 class dijkstra_switch(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -130,14 +132,13 @@ class dijkstra_switch(app_manager.RyuApp):
                                           ofproto.OFPCML_NO_BUFFER)]
         self.add_flow(datapath, 2, match, actions)
 
-    def add_flow(self, datapath, priority, match,actions):
+    def add_flow(self, datapath, priority, match, actions):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
         mod = parser.OFPFlowMod(datapath=datapath, priority=priority, match=match, instructions=inst)
         datapath.send_msg(mod)
         self.log(str(datapath.id), self.flowRateFile)
-
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def packet_in_handler(self, ev):
@@ -153,7 +154,7 @@ class dijkstra_switch(app_manager.RyuApp):
 
         dst = eth.dst
         src = eth.src
-        dpid = datapath.id        
+        dpid = datapath.id
         in_port = msg.match['in_port']
         self.mac_to_port.setdefault(dpid, {})
 
@@ -161,8 +162,7 @@ class dijkstra_switch(app_manager.RyuApp):
 
         dst_dpid = dpid_hostLookup(dst)
 
-        path = dijkstra(dpid, dst_dpid) 
-
+        path = dijkstra(dpid, dst_dpid)
 
         if len(path) == 0:
             out_port = ofproto.OFPP_FLOOD
@@ -182,16 +182,15 @@ class dijkstra_switch(app_manager.RyuApp):
             out_port = self.getDpidPort(dpid, next_dpid)
             actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
 
-
         for p in pkt.protocols:
-            if hasattr(p,'protocol_name') and p.protocol_name == 'tcp':
+            if hasattr(p, 'protocol_name') and p.protocol_name == 'tcp':
                 isTcp = True
 
         if isTcp:
             pkt_ipv4 = pkt.get_protocol(ipv4.ipv4)
-            self.log( str(pkt_ipv4.identification) + ' ' + str(src) + ' ' + str(dst) + ' ' + str(path).replace(' ', '') , self.packetTrace)
+            self.log(str(pkt_ipv4.identification) + ' ' + str(src) + ' ' + str(dst) + ' ' + str(path).replace(' ', ''),
+                     self.packetTrace)
             self.logger.info("in_port:%s, out_port: %s, path:%s", in_port, out_port, str(path))
-            
 
         out = parser.OFPPacketOut(datapath=datapath,
                                   buffer_id=ofproto.OFP_NO_BUFFER,
@@ -206,7 +205,7 @@ class dijkstra_switch(app_manager.RyuApp):
         self.topo_raw_switches = copy.copy(get_switch(self, None))
         # The Function get_link(self, None) outputs the list of links.
         self.topo_raw_links = copy.copy(get_link(self, None))
-        
+
     def getDpidPort(self, src_dpid, dst_dpid):
         for link in self.topo_raw_links:
             if (link.src.dpid == src_dpid and link.dst.dpid == dst_dpid):
@@ -215,6 +214,3 @@ class dijkstra_switch(app_manager.RyuApp):
         for l in self.topo_raw_links:
             print(l)
         self.logger.info('link between %s and %s does not exist', src_dpid, dst_dpid)
-
-
-        

@@ -6,13 +6,12 @@ from datetime import datetime
 class Processor:
 
     def __init__(self):
-        self.hosts = { '00:00:00:00:00:01' : 'h1', '00:00:00:00:00:02' : 'h2' , 
-                       '00:00:00:00:00:03' : 'h3' , '00:00:00:00:00:04' : 'h4', 
-                       '00:00:00:00:00:05' : 'h5' , '00:00:00:00:00:06' : 'h6' , 
-                       '00:00:00:00:00:07' : 'h7'}
-        
+        self.hosts = {'00:00:00:00:00:01': 'h1', '00:00:00:00:00:02': 'h2',
+                      '00:00:00:00:00:03': 'h3', '00:00:00:00:00:04': 'h4',
+                      '00:00:00:00:00:05': 'h5', '00:00:00:00:00:06': 'h6',
+                      '00:00:00:00:00:07': 'h7'}
 
-    def splitFile(self,filename):
+    def splitFile(self, filename):
         lines = []
         file = open(filename, 'r')
         line = file.readline()
@@ -25,7 +24,7 @@ class Processor:
         with open(filename, "w") as f:
             f.write(json.dumps(data, indent=2))
 
-    def strToTime(self,string):
+    def strToTime(self, string):
         return datetime.strptime(string, '%H:%M:%S.%f')
 
     def processPacketTrace(self):
@@ -39,13 +38,13 @@ class Processor:
             dst = self.hosts[line[3]]
             path = line[4]
 
-            if not (src,dst) in packetTrace:
-                packetTrace[(src,dst)] = {}
+            if (src, dst) not in packetTrace:
+                packetTrace[(src, dst)] = {}
 
-            if not ipv4Id in packetTrace[(src,dst)]:
-                packetTrace[(src,dst)][ipv4Id] = [path, time, 0]
+            if ipv4Id not in packetTrace[(src, dst)]:
+                packetTrace[(src, dst)][ipv4Id] = [path, time, 0]
             else:
-                packetTrace[(src,dst)][ipv4Id][2] = (time - packetTrace[(src,dst)][ipv4Id][1]).total_seconds()
+                packetTrace[(src, dst)][ipv4Id][2] = (time - packetTrace[(src, dst)][ipv4Id][1]).total_seconds()
 
         data = {}
         for key in packetTrace:
@@ -53,7 +52,7 @@ class Processor:
             data[s] = {}
             for k in packetTrace[key]:
                 if k != 0:
-                    data[s][str(k)] = [packetTrace[key][k][0], str(packetTrace[key][k][2])] 
+                    data[s][str(k)] = [packetTrace[key][k][0], str(packetTrace[key][k][2])]
 
         self.writeToFile('packetHistory.json', data)
         self.processChart(packetTrace, startTimeInTotal)
@@ -74,7 +73,7 @@ class Processor:
                 else:
                     pktTripTime[key[0]][key[1]][d][0] += packetTrace[key][k][2]
                     pktTripTime[key[0]][key[1]][d][1] += 1
-        
+
         for src in pktTripTime:
             data[src] = {}
             for dst in pktTripTime[src]:
@@ -87,13 +86,12 @@ class Processor:
         x = range(50)
         for src in data:
             for dst in data[src]:
-                plt.plot(x,data[src][dst], label=str(dst))
+                plt.plot(x, data[src][dst], label=str(dst))
             plt.xlabel('Time(* 10s)')
             plt.ylabel('Avg Delivery Time')
             plt.title('from src ' + str(src))
             plt.legend()
             plt.show()
-        
 
     def processFlowRate(self):
         lines = self.splitFile('flowRate.tr')
@@ -102,12 +100,12 @@ class Processor:
         for line in lines:
             time = self.strToTime(line[0])
             dpid = int(line[1])
-            if not dpid in flowTable:
+            if dpid not in flowTable:
                 flowTable[dpid] = [time, time, 1]
             else:
                 flowTable[dpid][1] = time
                 flowTable[dpid][2] += 1
-        
+
         for dpid in flowTable:
             k = flowTable[dpid]
             data[dpid] = k[2] / (((k[1]-k[0]).total_seconds())-60)
@@ -116,7 +114,6 @@ class Processor:
     def process(self):
         self.processPacketTrace()
         self.processFlowRate()
-
 
 
 processor = Processor()
