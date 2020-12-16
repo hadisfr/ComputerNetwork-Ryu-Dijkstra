@@ -1,127 +1,125 @@
 #!/usr/bin/env python3
 
-import subprocess
+import json
 import random
-import sys
 import threading
 import time
 
 from datetime import datetime
 from mininet.topo import Topo
 from mininet.net import Mininet
-from mininet.util import dumpNodeConnections
-from mininet.log import setLogLevel
-from mininet.node import Controller, RemoteController, OVSController
-from mininet.node import CPULimitedHost, Host, Node
-from mininet.node import OVSKernelSwitch, UserSwitch
-from mininet.node import IVSSwitch
+from mininet.node import RemoteController
+from mininet.node import Host
 from mininet.cli import CLI
 from mininet.log import setLogLevel, info
-from mininet.link import TCLink, Intf
+from mininet.link import TCLink
 
 
-setLogLevel('info')
-hostList = 7 * [0]
-
-
-class MyTopo(Topo):
-
-    def __init__(self, ipBase='10.0.0.0/8'):
+class Topology(Topo):
+    def __init__(self):
         Topo.__init__(self)
 
-        info('*** Add switches\n')
-        self.s1 = self.addSwitch('s1')
-        self.s2 = self.addSwitch('s2')
-        self.s3 = self.addSwitch('s3')
-        self.s4 = self.addSwitch('s4')
+        hosts_cfg, switches_cfg, links_cfg = self.read_topology("topology.json")
+        hosts = {}
+        switches = {}
 
-        info('*** Add hosts\n')
-        global hostList
-        for i in range(1, 8):
-            hostList[i-1] = self.addHost('h%s' % i, cls=Host, ip='10.0.0.%s' % i, mac='00:00:00:00:00:0%s' % i,
-                                         defaultRoute=None)
+        info("*** Add switches\n")
+        for sw_cfg in switches_cfg:
+            switches[sw_cfg] = self.addSwitch(str(sw_cfg))
 
-        self.addLinks()
+        info("*** Add hosts\n")
+        for host_mac in hosts_cfg.keys():
+            hosts[host_mac] = self.addHost("h%s" % host_mac[-1], ip="10.0.0.%s" % host_mac[-1], mac=host_mac,
+                                           cls=Host, defaultRoute=None)
 
-    def addLinks(self):
-        info('*** Add links\n')
-        self.addLink(hostList[0], self.s1, cls=TCLink, bw=random.uniform(1, 5))
-        self.addLink(hostList[1], self.s2, cls=TCLink, bw=random.uniform(1, 5))
-        self.addLink(hostList[2], self.s3, cls=TCLink, bw=random.uniform(1, 5))
-        self.addLink(hostList[3], self.s3, cls=TCLink, bw=random.uniform(1, 5))
-        self.addLink(hostList[4], self.s4, cls=TCLink, bw=random.uniform(1, 5))
-        self.addLink(hostList[5], self.s4, cls=TCLink, bw=random.uniform(1, 5))
-        self.addLink(hostList[6], self.s4, cls=TCLink, bw=random.uniform(1, 5))
-        self.addLink(self.s2, self.s1, cls=TCLink, bw=random.uniform(1, 5))
-        self.addLink(self.s3, self.s1, cls=TCLink, bw=random.uniform(1, 5))
-        self.addLink(self.s2, self.s3, cls=TCLink, bw=random.uniform(1, 5))
-        self.addLink(self.s3, self.s4, cls=TCLink, bw=random.uniform(1, 5))
-        self.addLink(self.s4, self.s2, cls=TCLink, bw=random.uniform(1, 5))
+        info("*** Add links\n")
+        for src, dst, weight in links_cfg:
+            self.addLink(switches[src], switches[dst], cls=TCLink, bw=weight)
+        for host_mac, sw in hosts_cfg.items():
+            self.addLink(hosts[host_mac], switches[sw], cls=TCLink, bw=1)
 
+    def read_topology(self, addr):
+        with open(addr) as f:
+            data = json.load(f)
+            links = data["weights"]
+            hosts = data["hosts"]
+            switches = set()
+        for src, dst, weight in links:
+            switches.add(src)
+            switches.add(dst)
 
-def changeBandwith(node):
-    "Helper function: dump connections to node"
-    for intf in node.intfList():
-        info(' %s:' % intf)
-        if intf.link:
-            randomNumber = random.uniform(1, 5)
-            intfs = [intf.link.intf1, intf.link.intf2]
-            intfs[0].config(bw=randomNumber)
-            intfs[1].config(bw=randomNumber)
-        else:
-            info(' \n')
+        return hosts, switches, links
 
 
-def manageLinks():
+def change_bandwith(link):
+    weight = random.uniform(1, 5)
+    intfs = [link.intf1, link.intf2]
+    info("link %s - %s:\t" % tuple(intfs))
+    intfs[0].config(bw=weight)
+    intfs[1].config(bw=weight)
+    info("\n")
+
+
+def manage_links(net):
     nodes = net.switches + net.hosts
+    links = set()
     for node in nodes:
-        changeBandwith(node)
+        for intf in node.intfList():
+            if intf.link:
+                links.add(intf.link)
+    for link in links:
+        change_bandwith(link)
 
 
-def runCmd(h, cmdStr):
+def run_cmd(h, cmdStr):
     h.cmd(cmdStr)
 
 
-def sendTcpPackets():
-    t_list = []
-    for host in hostList:
-        h = net.get(host)
-        targetHost = random.choice(list(set(hostList) - set(host)))
-        target_ip = net.get(targetHost).IP()
-        cmdStr = 'hping3 -c 1 -d 100000 %s&' % target_ip
-        t = threading.Thread(target=runCmd, args=[h, cmdStr])
-        t.start()
-        t_list.append(t)
-    for t in t_list:
-        t.join()
+def send_tcp_packets(net):
+    threads = []
+    for host in net.hosts:
+        targetHost = random.choice(list(set(net.hosts) - {host}))
+        target_ip = targetHost.IP()
+        cmdStr = "hping3 -c 1 -d 100000 %s &" % target_ip
+        thread = threading.Thread(target=run_cmd, args=[host, cmdStr])
+        thread.start()
+        threads.append(thread)
+    for thread in threads:
+        thread.join()
 
 
-def run():
-    timeCounter = 0
+def run(net):
+    time_counter = 0
     unit = 0.1
-    info('start running')
-    # print(datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3])
-    while timeCounter * unit < 6:
+    info("start of execution\n")
+    info("%s\n" % datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])
+    while time_counter * unit < 6:
         time.sleep(unit)
-        sendTcpPackets()
-        timeCounter += 1
-        if timeCounter * unit % 10 == 0:
-            manageLinks()
+        send_tcp_packets(net)
+        time_counter += 1
+        if time_counter * unit % 10 == 0:
+            manage_links(net)
+    info("%s\n" % datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])
+    info("end of execution\n")
 
-    # print(datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3])
-    info('end of execution')
+
+def main():
+    setLogLevel("info")
+
+    info("*** Starting network\n")
+
+    for i in range(5):
+        info("round %d\n" % (i + 1))
+        topo = Topology()
+        net = Mininet(topo, controller=lambda name: RemoteController(name,
+                      ip="127.0.0.1", protocol="tcp", port=6633), autoSetMacs=True)
+        net.start()
+        time.sleep(7)
+        run(net)
+        # CLI(net)
+        net.stop()
+        time.sleep(15)
 
 
-info('*** Starting network\n')
-
-for i in range(5):
-    print('round ', i)
-    topo = MyTopo()
-    net = Mininet(topo, controller=lambda name: RemoteController(name,
-                  ip='127.0.0.1', protocol='tcp', port=6633), autoSetMacs=True)
-    net.start()
-    time.sleep(7)
-    run()
-    # CLI(net)
-    net.stop()
-    time.sleep(15)
+if __name__ == '__main__':
+    main()

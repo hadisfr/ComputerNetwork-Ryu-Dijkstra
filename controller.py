@@ -6,27 +6,13 @@ from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import packet
-from ryu.lib.packet import ethernet, arp, ipv4, ipv6, arp
+from ryu.lib.packet import ethernet, arp, ipv4
 from ryu.lib.packet import ether_types
-from ryu.lib import mac
-from ryu.lib.mac import haddr_to_bin
-from ryu.controller import mac_to_port
-from ryu.ofproto import inet
-from ryu.lib.packet import icmp
-from ryu.ofproto import ether
-from ryu.topology import event, switches
-from ryu.topology.switches import LLDPPacket
+from ryu.topology import event
 from ryu.topology.api import get_switch, get_link
-from ryu.app.wsgi import ControllerBase
-import array
-from ryu.app.ofctl.api import get_datapath
 import json
 import copy
 from datetime import datetime
-
-
-def inv(x):
-    return list(filter(lambda a: not a.startswith("_"), dir(x)))
 
 
 class dijkstra_switch(app_manager.RyuApp):
@@ -40,7 +26,7 @@ class dijkstra_switch(app_manager.RyuApp):
         self.topo_raw_links = []
         self.dijkstra_predecessors = {}
         self.topology, self.host_locate = self.read_topology("topology.json")
-        self.mac_to_inteface_name = {"00:00:00:00:00:0%d" % (host + 1): "h%d" % (host + 1) for host in range(7)}
+        self.mac_to_inteface_name = {host_mac: "h%s" % host_mac[-1] for host_mac in self.host_locate.keys()}
         self.gen_dijkstra_trees()
         self.gen_mst()
         self.flow_rate_file = open("flowRate.tr", "w")
@@ -60,8 +46,7 @@ class dijkstra_switch(app_manager.RyuApp):
             hosts = data["hosts"]
 
         topo = {}
-        for link in links:
-            src, dst, weight = link
+        for src, dst, weight in links:
             topo.setdefault(src, {})
             topo.setdefault(dst, {})
             topo[src][dst] = weight
@@ -168,14 +153,10 @@ class dijkstra_switch(app_manager.RyuApp):
         else:
             raise RuntimeError("link between %s and %s does not exist" % (src_dpid, dst_mac))
 
-    def is_lldp(self, msg):
-        try:
-            src_dpid, src_port_no = LLDPPacket.lldp_parse(msg.data)
-            return True
-        except LLDPPacket.LLDPUnknownFormat:
-            return False
+    def is_lldp(self, eth):
+        return eth.ethertype == ether_types.ETH_TYPE_LLDP
 
-    def is_multicast(self, mac_addr):
+    def is_broadcast(self, mac_addr):
         return mac_addr == "ff:ff:ff:ff:ff:ff"
 
     def is_tcp(self, pkt):
@@ -209,7 +190,7 @@ class dijkstra_switch(app_manager.RyuApp):
 
         return out_port
 
-    def route_multicast(self, src_mac, src_dpid, in_port, pkt):
+    def route_broadcast(self, src_mac, src_dpid, in_port, pkt):
         out_ports = [self.get_core_port(src_dpid, neighbor) for neighbor in self.mst_neighbors[src_dpid]]
         for host_mac, sw_dpid in self.host_locate.items():
             if sw_dpid == src_dpid:
@@ -229,10 +210,6 @@ class dijkstra_switch(app_manager.RyuApp):
     def packet_in_handler(self, ev):
         msg = ev.msg
 
-        # Ignore LLDPPackets used for topology discovery
-        if self.is_lldp(msg):
-            return
-
         datapath = msg.datapath
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
@@ -250,11 +227,11 @@ class dijkstra_switch(app_manager.RyuApp):
         self.mac_to_port[src_dpid][src_mac] = in_port
         dst_dpid = self.host_locate.get(dst_mac)
 
-        if dst_mac not in self.mac_to_inteface_name and not self.is_multicast(dst_mac):
+        if self.is_lldp(eth) or (dst_mac not in self.mac_to_inteface_name and not self.is_broadcast(dst_mac)):
             return
 
-        if self.is_multicast(dst_mac):
-            out_ports = self.route_multicast(src_mac, src_dpid, in_port, pkt)
+        if self.is_broadcast(dst_mac):
+            out_ports = self.route_broadcast(src_mac, src_dpid, in_port, pkt)
         else:
             out_ports = [self.route_unicast(src_mac, dst_mac, src_dpid, dst_dpid, datapath, in_port, pkt, ofproto, parser)]
 
