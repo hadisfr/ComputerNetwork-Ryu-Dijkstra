@@ -52,11 +52,11 @@ class MyTopo(Topo):
         self.addLink(hostList[4], self.s4, cls=TCLink, bw=random.uniform(1, 5))
         self.addLink(hostList[5], self.s4, cls=TCLink, bw=random.uniform(1, 5))
         self.addLink(hostList[6], self.s4, cls=TCLink, bw=random.uniform(1, 5))
-        # self.addLink(self.s2, self.s1, cls=TCLink, bw=random.uniform(1, 5))
+        self.addLink(self.s2, self.s1, cls=TCLink, bw=random.uniform(1, 5))
         self.addLink(self.s3, self.s1, cls=TCLink, bw=random.uniform(1, 5))
         self.addLink(self.s2, self.s3, cls=TCLink, bw=random.uniform(1, 5))
         self.addLink(self.s3, self.s4, cls=TCLink, bw=random.uniform(1, 5))
-        # self.addLink(self.s4, self.s2, cls=TCLink, bw=random.uniform(1, 5))
+        self.addLink(self.s4, self.s2, cls=TCLink, bw=random.uniform(1, 5))
 
 
 def changeBandwith(node):

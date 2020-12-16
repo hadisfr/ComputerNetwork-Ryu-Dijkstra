@@ -6,7 +6,7 @@ from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import packet
-from ryu.lib.packet import ethernet, arp, ipv4
+from ryu.lib.packet import ethernet, arp, ipv4, ipv6, arp
 from ryu.lib.packet import ether_types
 from ryu.lib import mac
 from ryu.lib.mac import haddr_to_bin
@@ -42,6 +42,7 @@ class dijkstra_switch(app_manager.RyuApp):
         self.topology, self.host_locate = self.read_topology("topology.json")
         self.mac_to_inteface_name = {"00:00:00:00:00:0%d" % (host + 1): "h%d" % (host + 1) for host in range(7)}
         self.gen_dijkstra_trees()
+        self.gen_mst()
         self.flow_rate_file = open("flowRate.tr", "w")
         self.packet_trace = open("packetTrace.tr", "w")
 
@@ -70,6 +71,39 @@ class dijkstra_switch(app_manager.RyuApp):
 
     def gen_dijkstra_trees(self):
         self.dijkstra_predecessors = {node: self.dijkstra(node) for node in self.topology}
+        self.logger.info("Dijkstra predecessors:", self.dijkstra_predecessors)
+
+    def gen_mst(self):
+        self.mst_neighbors = {}
+        for edge in self.mst():
+            self.mst_neighbors.setdefault(edge[0], set())
+            self.mst_neighbors[edge[0]].add(edge[1])
+            self.mst_neighbors.setdefault(edge[1], set())
+            self.mst_neighbors[edge[1]].add(edge[0])
+        self.logger.info("MST neighbors:", self.mst_neighbors)
+
+    def mst(self):
+        def initiate():
+            covered_nodes = set()
+            tree_edges = set()
+            nodes = set(self.topology.keys())
+            edges = set()
+            for src in self.topology:
+                for dst, weight in self.topology[src].items():
+                    if (dst, src, weight) not in edges:
+                        edges.add((src, dst, weight))
+            edges = sorted(list(edges), key=lambda edge: edge[2])
+            return nodes, edges, covered_nodes, tree_edges
+
+        nodes, edges, covered_nodes, tree_edges = initiate()
+        for edge in edges:
+            if covered_nodes == nodes:
+                break
+            if edge[0] not in covered_nodes or edge[1] not in covered_nodes:
+                tree_edges.add(edge)
+                covered_nodes.add(edge[0])
+                covered_nodes.add(edge[1])
+        return tree_edges
 
     def dijkstra(self, src):
         def initiate(src):
@@ -91,20 +125,10 @@ class dijkstra_switch(app_manager.RyuApp):
                     distances[node] = distances[nextNode] + self.topology[nextNode][node]
                     predecessors[node] = nextNode
 
-        def find_min_distance(candidate_nodes, distances):
-            if not candidate_nodes:
-                raise ValueError("empty candidate nodes")
-            candidate_nodes = list(candidate_nodes)
-            minNode = candidate_nodes[0]
-            for n in candidate_nodes:
-                if distances[n] < distances[minNode]:
-                    minNode = n
-            return minNode
-
         nodes, visited, distances, predecessors = initiate(src)
 
         while nodes != visited:
-            nextNode = find_min_distance(nodes - visited, distances)
+            nextNode = min(nodes - visited, key=lambda node: distances[node])
             visited.add(nextNode)
             update_distances(distances, predecessors)
 
@@ -165,22 +189,41 @@ class dijkstra_switch(app_manager.RyuApp):
         path = self.get_path(src_dpid, dst_dpid)
         if len(path) == 0:
             raise RuntimeError("Invalid path")
-        self.logger.info("%s -> %s : %s -> %s via %s" %
-                         (self.mac_to_inteface_name[src_mac], self.mac_to_inteface_name[dst_mac],
-                          src_dpid, dst_dpid, path))
 
         if len(path) == 1:  # directly forward to host
             out_port = self.get_edge_port(src_dpid, dst_mac)
         else:  # forward to next hop
             out_port = self.get_core_port(src_dpid, path[1])
 
+        pkt_ipv4 = pkt.get_protocol(ipv4.ipv4)
+        pkt_arp = pkt.get_protocol(arp.arp)
+        protocol = "ARP" if pkt_arp is not None else "IPv4" if pkt_ipv4 is not None else "?"
+        self.logger.info("%s\t%s -> %s :\t%s -> %s\tvia port %s to %s" %
+                         (protocol, self.mac_to_inteface_name[src_mac], self.mac_to_inteface_name[dst_mac],
+                          src_dpid, dst_dpid, out_port, path))
+
         if self.is_tcp(pkt):
-            pkt_ipv4 = pkt.get_protocol(ipv4.ipv4)
             self.logger.info("in_port: %s,\tout_port: %s,\tpath: %s", in_port, out_port, str(path))
             self.log("%s %s %s %s" % (pkt_ipv4.identification, src_mac, dst_mac, str(path).replace(" ", "")),
                      self.packet_trace)
 
         return out_port
+
+    def route_multicast(self, src_mac, src_dpid, in_port, pkt):
+        out_ports = [self.get_core_port(src_dpid, neighbor) for neighbor in self.mst_neighbors[src_dpid]]
+        for host_mac, sw_dpid in self.host_locate.items():
+            if sw_dpid == src_dpid:
+                out_ports.append(self.get_edge_port(src_dpid, host_mac))
+        if in_port in out_ports:
+            out_ports.remove(in_port)
+
+        pkt_ipv4 = pkt.get_protocol(ipv4.ipv4)
+        pkt_arp = pkt.get_protocol(arp.arp)
+        protocol = "ARP" if pkt_arp is not None else "IPv4" if pkt_ipv4 is not None else "?"
+        self.logger.info("%s\t%s -> h* :\t%s -> *\tvia flood %s" %
+                         (protocol, self.mac_to_inteface_name[src_mac], src_dpid, out_ports))
+
+        return out_ports
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def packet_in_handler(self, ev):
@@ -211,11 +254,11 @@ class dijkstra_switch(app_manager.RyuApp):
             return
 
         if self.is_multicast(dst_mac):
-            out_port = ofproto.OFPP_FLOOD
+            out_ports = self.route_multicast(src_mac, src_dpid, in_port, pkt)
         else:
-            out_port = self.route_unicast(src_mac, dst_mac, src_dpid, dst_dpid, datapath, in_port, pkt, ofproto, parser)
+            out_ports = [self.route_unicast(src_mac, dst_mac, src_dpid, dst_dpid, datapath, in_port, pkt, ofproto, parser)]
 
-        actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
+        actions = [datapath.ofproto_parser.OFPActionOutput(out_port) for out_port in out_ports]
         out = parser.OFPPacketOut(
             datapath=datapath,
             buffer_id=ofproto.OFP_NO_BUFFER,
