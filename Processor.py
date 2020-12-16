@@ -6,10 +6,7 @@ from datetime import datetime
 class Processor:
 
     def __init__(self):
-        self.hosts = {'00:00:00:00:00:01': 'h1', '00:00:00:00:00:02': 'h2',
-                      '00:00:00:00:00:03': 'h3', '00:00:00:00:00:04': 'h4',
-                      '00:00:00:00:00:05': 'h5', '00:00:00:00:00:06': 'h6',
-                      '00:00:00:00:00:07': 'h7'}
+        self.hosts = {'00:00:00:00:00:0%d' % (host + 1): 'h%d' % (host + 1) for host in range(7)}
 
     def splitFile(self, filename):
         lines = []
